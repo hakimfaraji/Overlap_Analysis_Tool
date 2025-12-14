@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Systematic Review Overlap Analysis Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        .rotated-header {
+            writing-mode: vertical-lr;
+            transform: rotate(180deg);
+            white-space: nowrap;
+            font-size: 0.7rem;
+            padding: 0.5rem 0.2rem;
+            text-align: center;
+        }
+        .chart-container {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            height: 500px;
+        }
+        .heatmap-cell {
+            width: 35px;
+            height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+            border-radius: 0.25rem;
+            transition: all 0.2s;
+        }
+        .heatmap-cell:hover {
+            transform: scale(1.1);
+            z-index: 10;
+        }
+        .matrix-table {
+            font-size: 0.75rem;
+        }
+        .setup-plot-container {
+            height: 600px;
+            overflow: auto;
+        }
+        .intersection-bar {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .intersection-bar:hover {
+            opacity: 0.8;
+            transform: translateX(5px);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="container bg-white shadow-xl rounded-lg p-6">
+
+        <!-- Header Section --> 
+        <div class="flex items-center justify-between mb-6">
+            <!-- Left: University Logo -->
+            <a href="https://aqaimpa.iaas.ull.es/?page_id=841&lang=en" target="_blank" rel="noopener noreferrer" class="w-32 h-32 flex items-center justify-center">
+                <img src="https://github.com/hakimfaraji/Overlap-Analysis-Tool/blob/main/%D8%AC%D8%AF%DB%8C%D8%AF.png?raw=true"
+                     alt="AQAIMPA Universidad de La Laguna Logo"
+                     class="max-h-full max-w-full">
+            </a>
+    
+           <!-- Center: Title -->
+           <h1 class="flex-grow text-3xl font-bold text-center text-purple-700">Systematic Review Overlap Analysis Tool</h1>
+    
+           <!-- Right: Export Buttons -->
+           <div id="header-export-buttons" class="hidden flex flex-col gap-1 items-end">
+               <button id="export-excel-btn" class="bg-indigo-500 text-white font-medium w-32 h-8 rounded-md hover:bg-indigo-600 text-xs transition-colors border border-indigo-400 shadow-sm">
+                   Export Excel
+               </button>
+               <button id="export-word-btn" class="bg-indigo-500 text-white font-medium w-32 h-8 rounded-md hover:bg-indigo-600 text-xs transition-colors border border-indigo-400 shadow-sm">
+                   Export Word
+               </button>
+               <button id="export-json-btn" class="bg-indigo-500 text-white font-medium w-32 h-8 rounded-md hover:bg-indigo-600 text-xs transition-colors border border-indigo-400 shadow-sm">
+                   Save Data
+               </button>
+       </div>
+   </div>
+
+        <!-- File Input Section -->
+        <div id="file-input-section" class="flex flex-col items-center justify-center space-y-4 mb-8">
+            <label for="csv-file" class="text-lg font-medium text-gray-700">Select Systematic Reviews CSV File:</label>
+            <input type="file" id="csv-file" accept=".csv" class="p-2 border border-gray-300 rounded-md w-80">
+            <button id="start-analysis-btn" class="bg-indigo-600 text-white font-bold py-3 px-8 rounded-lg hover:bg-indigo-700 transition-colors duration-200 shadow-lg">
+                Start Overlap Analysis
+            </button>
+            
+            <div class="file-format-info w-full max-w-4xl bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+                <h3 class="font-semibold text-blue-800 mb-2">Required CSV Format:</h3>
+                <div class="sample-csv bg-white p-4 rounded border font-mono text-sm overflow-x-auto">
+                    Code,DOI,Title,DOIs/PMIDs/WOS IDs of Included Primary Studies<br>
+                    R01,10.1234/rev1,"Review Title 1","study1;study2;study3;study4"<br>
+                    R02,10.1234/rev2,"Review Title 2","study2;study4;study5;study6"<br>
+                    R03,10.1234/rev3,"Review Title 3","study1;study3;study6;study7"
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="hidden flex flex-col justify-center items-center h-32 space-y-4">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+            <span class="text-indigo-600 font-medium text-lg">Analyzing Systematic Reviews Overlap...</span>
+            <div class="text-gray-500 text-sm">Calculating C-Index, Overlap Matrix, and Setup Diagrams</div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="hidden mt-8 space-y-8">
+
+            <!-- Statistics Overview -->
+            <div class="stats-grid grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+
+                <!-- Corrected Covered Area -->
+                <div class="stat-card bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center text-center">
+                    <div class="text-2xl font-light text-gray-900 mb-1" id="c-index">--</div>
+                    <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Corrected Covered Area</div>
+                    <div class="mt-2 text-xs text-gray-400">CCA Index</div>
+                </div>
+
+                <!-- Unique Primary Studies -->
+                <div class="stat-card bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center text-center">
+                <div class="text-2xl font-light text-blue-600 mb-1" id="unique-studies-count">--</div>
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Unique Studies</div>
+                <div class="mt-2 text-xs text-gray-400">Primary Research</div>
+            </div>
+            
+            <!-- Total Study Inclusions -->
+            <div class="stat-card bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center text-center">
+                <div class="text-2xl font-light text-green-600 mb-1" id="total-studies-count">--</div>
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Inclusions</div>
+                <div class="mt-2 text-xs text-gray-400">Study References</div>
+            </div>
+
+            <!-- Systematic Reviews -->
+            <div class="stat-card bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center text-center">
+                <div class="text-2xl font-light text-purple-600 mb-1" id="total-reviews-count">--</div>
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Systematic Reviews</div>
+                <div class="mt-2 text-xs text-gray-400">Analyzed</div>
+            </div>
+            
+            <!-- Core Studies -->
+            <div class="stat-card bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center text-center">
+                <div class="text-2xl font-light text-orange-600 mb-1" id="core-studies-count">--</div>
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Core Studies</div>
+                <div class="mt-2 text-xs text-gray-400">≥2 Reviews</div>
+            </div>
+
+            <!-- Mean Overlap -->
+            <div class="stat-card bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center justify-center text-center">
+                <div class="text-2xl font-light text-teal-600 mb-1" id="mean-overlap">--</div>
+                <div class="text-xs font-medium text-gray-500 uppercase tracking-wide">Mean Overlap</div>
+                <div class="mt-2 text-xs text-gray-400">Percentage</div>
+            </div>
+        </div>
+
+            <!-- All Charts Section - REMOVED VISUAL CHARTS -->
+            <!-- Pairwise C-Index Table -->
+            <div class="bg-white rounded-xl shadow-lg border p-6">
+                <h3 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Pairwise C-Index Matrix of Primary Studies</h3>
+                <div class="overflow-x-auto">
+                    <table id="pairwise-cindex-table" class="min-w-full matrix-table bg-white rounded-lg shadow-sm border">
+                        <thead id="pairwise-cindex-header" class="bg-gray-50">
+                            <!-- Header will be populated dynamically -->
+                        </thead>
+                        <tbody id="pairwise-cindex-body" class="divide-y divide-gray-200">
+                            <!-- Body will be populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 text-sm text-gray-600">
+                    <p><strong>C-Index Interpretation:</strong> Values range from 0 (no overlap) to 1 (complete overlap). Shows pairwise overlap between systematic reviews.</p>
+                </div>
+            </div>
+
+            <!-- Overlap Matrix -->
+            <div class="bg-white rounded-xl shadow-lg border p-6">
+                <h3 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Overlap Matrix (Count of Shared Primary Studies)</h3>
+                <div class="overflow-x-auto">
+                    <table id="overlap-matrix" class="min-w-full matrix-table bg-white rounded-lg shadow-sm border">
+                        <thead id="overlap-matrix-header" class="bg-gray-50">
+                            <!-- Header will be populated dynamically -->
+                        </thead>
+                        <tbody id="overlap-matrix-body" class="divide-y divide-gray-200">
+                            <!-- Body will be populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Core Studies -->
+            <div class="bg-white rounded-xl shadow-lg border p-6">
+                <h3 class="text-2xl font-bold mb-4 text-gray-800 border-b pb-2">Core Primary Studies Analysis</h3>
+                <div class="overflow-x-auto">
+                    <table id="core-studies-table" class="min-w-full bg-white rounded-lg shadow-sm border text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="text-left px-4 py-3 font-semibold text-gray-700 border-b">Primary Study ID</th>
+                                <th class="text-center px-4 py-3 font-semibold text-gray-700 border-b">Inclusion Count</th>
+                                <th class="text-center px-4 py-3 font-semibold text-gray-700 border-b">Inclusion Frequency</th>
+                                <th class="text-left px-4 py-3 font-semibold text-gray-700 border-b">Included In Systematic Reviews</th>
+                            </tr>
+                        </thead>
+                        <tbody id="core-studies-body" class="divide-y divide-gray-200">
+                            <!-- Body will be populated dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- University Footer -->
+            <div class="bg-gray-100 rounded-lg p-4 mt-8 border text-center">
+                <div class="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center border">
+                            <img src="https://github.com/hakimfaraji/Overlap-Analysis-Tool/blob/main/%D8%AC%D8%AF%DB%8C%D8%AF.png?raw=true" 
+                                 alt="AQAIMPA Logo" 
+                                 class="max-h-full max-w-full rounded">
+                        </div>
+                        <div class="text-left">
+                            <div class="font-semibold text-gray-800">AQAIMPA Universidad de La Laguna</div>
+                            <div class="text-sm text-gray-600">Systematic Review Research Group</div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-gray-600 text-sm">
+                        <p>Systematic Review Overlap Analysis Tool</p>
+                        <p>Developed for Academic Research Purposes</p>
+                    </div>
+                    
+                    <div class="flex space-x-4">
+                        <a href="https://aqaimpa.iaas.ull.es/?page_id=841&lang=en" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-sm">
+                            University Website
+                        </a>
+                        <a href="https://aqaimpa.iaas.ull.es/?page_id=841&lang=en" target="_blank" class="text-indigo-600 hover:text-indigo-800 text-sm">
+                            Contact
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+        
+        <!-- Error Message -->
+        <div id="error-message" class="hidden mt-8 text-center text-red-700 font-bold p-4 bg-red-100 rounded-lg border border-red-200"></div>
+
+    </div>
+
+    <script>
+        // Enhanced analysis tool with complete Setup plot and Pairwise C-Index
+        const fileInput = document.getElementById('csv-file');
+        const startAnalysisBtn = document.getElementById('start-analysis-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const resultsSection = document.getElementById('results-section');
+        const errorMessageDiv = document.getElementById('error-message');
+        const fileInputSection = document.getElementById('file-input-section');
+
+        let analysisData = null;
+        let charts = {};
+
+        startAnalysisBtn.addEventListener('click', startAnalysis);
+
+        function startAnalysis() {
+            const file = fileInput.files[0];
+            if (!file) {
+                showError('Please select a CSV file containing systematic reviews data.');
+                return;
+            }
+
+            loadingIndicator.classList.remove('hidden');
+            resultsSection.classList.add('hidden');
+            errorMessageDiv.classList.add('hidden');
+
+            // ✅ پنهان کردن دکمه‌های Export هنگام شروع تحلیل جدید
+            const headerExportButtons = document.getElementById('header-export-buttons');
+            if (headerExportButtons) {
+                headerExportButtons.classList.add('hidden');
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const csvData = event.target.result;
+                    const parsedData = parseCSV(csvData);
+                    analyzeData(parsedData);
+                } catch (error) {
+                    showError('Error processing file: ' + error.message);
+                    loadingIndicator.classList.add('hidden');
+                }
+            };
+            reader.onerror = function() {
+                showError('Error reading the selected file.');
+                loadingIndicator.classList.add('hidden');
+            };
+            reader.readAsText(file);
+        }
+
+        function parseCSV(text) {
+           const lines = text.trim().split('\n').filter(line => line.trim());
+           if (lines.length < 2) throw new Error('CSV file is empty or has no data rows');
+    
+           // Use PapaParse for robust CSV parsing
+           const results = Papa.parse(text, {
+               header: true,
+               skipEmptyLines: true,
+               transform: (value) => value.trim()
+            });
+
+            if (results.errors.length > 0) {
+                throw new Error('CSV parsing errors: ' + results.errors.map(e => e.message).join(', '));
+            }
+
+            const data = results.data;
+            
+            // Validate required columns - UPDATED for 4-column format
+            const requiredHeaders = ['Code', 'DOI', 'Title', 'DOIs/PMIDs/WOS IDs of Included Primary Studies'];
+            const missingHeaders = requiredHeaders.filter(h => !results.meta.fields.includes(h));
+            if (missingHeaders.length > 0) {
+                throw new Error(`Missing required columns: ${missingHeaders.join(', ')}`);
+            }
+
+            return data.filter(item => item.Code && item.DOI && item.Title);
+        }
+        function analyzeData(reviews) {
+            if (!reviews || reviews.length === 0) {
+                throw new Error('No valid systematic reviews found in the CSV file');
+            }
+
+            // Calculate comprehensive statistics
+            const totalReviews = reviews.length;
+            let totalStudyInclusions = 0;
+            const allPrimaryStudies = new Set();
+            const studyCounts = {};
+            const studyToReviews = {};
+            const reviewSizes = {};
+            
+              // 🔽 🔽 🔽 این بخش را ADD کنید (قبل از خط reviews.forEach(review => {) 🔽 🔽 🔽
+              // Create mapping for codes from CSV
+              const reviewCodes = {};
+              reviews.forEach(review => {
+                  reviewCodes[review.DOI] = review.Code; // Use Code from CSV column 1
+              });
+              // 🔼 🔼 🔼 پایان بخش ADD 🔼 🔼 🔼
+
+            // Process each systematic review
+            reviews.forEach(review => {
+                const studies = review['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                    ?.split(';')
+                    .map(s => s.trim())
+                    .filter(s => s) || [];
+                
+                totalStudyInclusions += studies.length;
+                reviewSizes[review.DOI] = studies.length;
+                
+                studies.forEach(study => {
+                    allPrimaryStudies.add(study);
+                    studyCounts[study] = (studyCounts[study] || 0) + 1;
+                    if (!studyToReviews[study]) studyToReviews[study] = [];
+                    studyToReviews[study].push(review.Code); // 🔽 این خط را UPDATE کنید (بوده: review.Title)
+                });
+            });
+
+            const uniqueStudies = allPrimaryStudies.size;
+            
+            // Calculate Corrected Covered Area (CCA)
+            const cca = calculateCCA(totalStudyInclusions, uniqueStudies, totalReviews);
+            
+            // Calculate core studies (included in 2 or more reviews)
+            const coreStudies = Object.entries(studyCounts)
+                .filter(([_, count]) => count >= 2)
+                .sort(([_, a], [__, b]) => b - a)
+                .map(([studyId, count]) => ({
+                    studyId,
+                    count,
+                    frequency: (count / totalReviews * 100).toFixed(1),
+                    reviews: studyToReviews[studyId] || []
+                }));
+
+            // Calculate pairwise matrices
+            const overlapMatrix = calculateOverlapMatrix(reviews);
+            const cIndexMatrix = calculateCIndexMatrix(reviews);
+            const meanOverlap = calculateMeanOverlap(overlapMatrix, reviews);
+
+            // Store comprehensive results
+            analysisData = {
+                reviews,
+                reviewCodes, // 🔽 این خط را ADD کنید
+                statistics: {
+                    cca,
+                    uniqueStudies,
+                    totalStudyInclusions,
+                    totalReviews,
+                    coreStudiesCount: coreStudies.length,
+                    meanOverlap
+                },
+                coreStudies,
+                overlapMatrix,
+                cIndexMatrix,
+                reviewSizes,
+                studyToReviews,
+                allPrimaryStudies: Array.from(allPrimaryStudies)
+            };
+
+            // Display all results
+            displayResults();
+            loadingIndicator.classList.add('hidden');
+        }
+
+        function calculateCCA(totalInclusions, uniqueStudies, numReviews) {
+            if (uniqueStudies === 0 || numReviews <= 1) return 0;
+            const numerator = totalInclusions - uniqueStudies;
+            const denominator = uniqueStudies * (numReviews - 1);
+            return (numerator / denominator).toFixed(4);
+        }
+
+        function calculateOverlapMatrix(reviews) {
+            const matrix = {};
+            const reviewDOIs = reviews.map(r => r.DOI);
+            
+            reviewDOIs.forEach(doi1 => {
+                matrix[doi1] = {};
+                reviewDOIs.forEach(doi2 => {
+                    const review1 = reviews.find(r => r.DOI === doi1);
+                    const review2 = reviews.find(r => r.DOI === doi2);
+                    
+                    const studies1 = new Set(
+                        review1['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                            ?.split(';').map(s => s.trim()).filter(s => s) || []
+                    );
+                    const studies2 = new Set(
+                        review2['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                            ?.split(';').map(s => s.trim()).filter(s => s) || []
+                    );
+                    
+                    const intersection = new Set([...studies1].filter(x => studies2.has(x)));
+                    matrix[doi1][doi2] = intersection.size;
+                });
+            });
+            return matrix;
+        }
+
+        function calculateCIndexMatrix(reviews) {
+            const matrix = {};
+            const reviewDOIs = reviews.map(r => r.DOI);
+            
+            reviewDOIs.forEach(doi1 => {
+                matrix[doi1] = {};
+                reviewDOIs.forEach(doi2 => {
+                    if (doi1 === doi2) {
+                        matrix[doi1][doi2] = 1.0; // Perfect overlap with itself
+                    } else {
+                        const review1 = reviews.find(r => r.DOI === doi1);
+                        const review2 = reviews.find(r => r.DOI === doi2);
+                        
+                        const studies1 = new Set(
+                            review1['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                                ?.split(';').map(s => s.trim()).filter(s => s) || []
+                        );
+                        const studies2 = new Set(
+                            review2['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                                ?.split(';').map(s => s.trim()).filter(s => s) || []
+                        );
+                        
+                        const intersection = new Set([...studies1].filter(x => studies2.has(x)));
+                        const union = new Set([...studies1, ...studies2]);
+                        
+                        matrix[doi1][doi2] = union.size > 0 ? (intersection.size / union.size).toFixed(4) : 0;
+                    }
+                });
+            });
+            return matrix;
+        }
+
+        function calculateMeanOverlap(overlapMatrix, reviews) {
+            let totalOverlap = 0;
+            let comparisonCount = 0;
+            const reviewDOIs = reviews.map(r => r.DOI);
+            
+            reviewDOIs.forEach(doi1 => {
+                reviewDOIs.forEach(doi2 => {
+                    if (doi1 !== doi2) {
+                        const review1 = reviews.find(r => r.DOI === doi1);
+                        const studies1 = new Set(
+                            review1['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                                ?.split(';').map(s => s.trim()).filter(s => s) || []
+                        );
+                        const overlapPercent = (overlapMatrix[doi1][doi2] / studies1.size) * 100;
+                        totalOverlap += overlapPercent;
+                        comparisonCount++;
+                    }
+                });
+            });
+            
+            return comparisonCount > 0 ? (totalOverlap / comparisonCount).toFixed(1) : 0;
+        }
+
+        function displayResults() {
+            if (!analysisData) return;
+
+            const { statistics, reviews, coreStudies, overlapMatrix, cIndexMatrix, reviewSizes } = analysisData;
+
+            // Update statistics display
+            document.getElementById('c-index').textContent = statistics.cca;
+            document.getElementById('unique-studies-count').textContent = statistics.uniqueStudies;
+            document.getElementById('total-studies-count').textContent = statistics.totalStudyInclusions;
+            document.getElementById('total-reviews-count').textContent = statistics.totalReviews;
+            document.getElementById('core-studies-count').textContent = statistics.coreStudiesCount;
+            document.getElementById('mean-overlap').textContent = statistics.meanOverlap + '%';
+           
+            // ✅ نمایش دکمه‌های Export در هدر
+            document.getElementById('header-export-buttons').classList.remove('hidden'); 
+
+            // Hide file input section after analysis
+            fileInputSection.classList.add('hidden');
+
+            // Create tables only (charts removed)
+            createPairwiseCIndexTable(reviews, cIndexMatrix);
+            createOverlapMatrixTable(reviews, overlapMatrix);
+            createCoreStudiesTable(coreStudies);
+
+            resultsSection.classList.remove('hidden');
+        }
+
+        // REMOVED: createSetupPlot, createSetSizeChart, createReviewSizeChart, createOverlapDistributionChart
+
+        function createPairwiseCIndexTable(reviews, cIndexMatrix) {
+            const header = document.getElementById('pairwise-cindex-header');
+            const body = document.getElementById('pairwise-cindex-body');
+            
+            header.innerHTML = '';
+            body.innerHTML = '';
+
+            // Create header row
+            const headerRow = document.createElement('tr');
+            headerRow.appendChild(createTableHeader('Systematic Reviews', 'text-left'));
+            
+            reviews.forEach(review => {
+                const code = analysisData.reviewCodes[review.DOI]; // استفاده از Code از ستون اول
+                const th = createTableHeader(
+                    code, // 🔽 REPLACE با این خط
+                    'text-center rotated-header'
+                );
+                th.title = `${review.Title} (DOI: ${review.DOI})`; // 🔽 این خط را ADD کنید
+
+                headerRow.appendChild(th);
+            });
+            header.appendChild(headerRow);
+
+            // Create data rows
+            reviews.forEach(rowReview => {
+                const tr = document.createElement('tr');
+                const rowCode = analysisData.reviewCodes[rowReview.DOI]; // استفاده از Code از ستون اول
+                tr.appendChild(createTableCell(
+                    rowCode, // 🔽 REPLACE با این خط
+                    'text-left font-medium'
+                ));
+                tr.cells[0].title = `${rowReview.Title} (DOI: ${rowReview.DOI})`; // 🔽 این خط را ADD کنید
+
+                reviews.forEach(colReview => {
+                    const cIndex = cIndexMatrix[rowReview.DOI][colReview.DOI];
+                    const cell = createTableCell(cIndex, 'text-center');
+                    
+                    // Color code based on C-Index value
+                    const value = parseFloat(cIndex);
+                    if (value === 1.0) {
+                        cell.classList.add('bg-green-100', 'text-green-800');
+                    } else if (value >= 0.7) {
+                        cell.classList.add('bg-blue-100', 'text-blue-800');
+                    } else if (value >= 0.3) {
+                        cell.classList.add('bg-yellow-100', 'text-yellow-800');
+                    } else if (value > 0) {
+                        cell.classList.add('bg-orange-100', 'text-orange-800');
+                    } else {
+                        cell.classList.add('bg-gray-100', 'text-gray-500');
+                    }
+                    
+                    tr.appendChild(cell);
+                });
+                body.appendChild(tr);
+            });
+        }
+
+        function createOverlapMatrixTable(reviews, overlapMatrix) {
+            const header = document.getElementById('overlap-matrix-header');
+            const body = document.getElementById('overlap-matrix-body');
+            
+            header.innerHTML = '';
+            body.innerHTML = '';
+
+            // Create header row
+            const headerRow = document.createElement('tr');
+            headerRow.appendChild(createTableHeader('Systematic Reviews', 'text-left'));
+            
+            reviews.forEach(review => {
+                const code = analysisData.reviewCodes[review.DOI]; // استفاده از Code از ستون اول
+                const th = createTableHeader(
+                    code, // استفاده از کد به جای عنوان
+                    'text-center rotated-header'
+                );
+                th.title = `${review.Title} (DOI: ${review.DOI})`; // نمایش عنوان کامل در tooltip
+                headerRow.appendChild(th);
+            });
+            header.appendChild(headerRow);
+
+            // Create data rows
+            reviews.forEach(rowReview => {
+                const tr = document.createElement('tr');
+                const rowCode = analysisData.reviewCodes[rowReview.DOI]; // استفاده از Code از ستون اول
+                tr.appendChild(createTableCell(
+                    rowCode, // استفاده از کد به جای عنوان
+                    'text-left font-medium'
+                ));
+                tr.cells[0].title = `${rowReview.Title} (DOI: ${rowReview.DOI})`; // نمایش عنوان کامل در tooltip
+
+                reviews.forEach(colReview => {
+                    const overlapCount = overlapMatrix[rowReview.DOI][colReview.DOI];
+                    const cell = createTableCell(overlapCount, 'text-center');
+                    
+                    // Color code based on overlap intensity
+                    const rowStudies = new Set(
+                        rowReview['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                            ?.split(';').map(s => s.trim()).filter(s => s) || []
+                    );
+                    const maxPossible = rowReview.DOI === colReview.DOI ? rowStudies.size : Math.min(rowStudies.size, 
+                        new Set(colReview['DOIs/PMIDs/WOS IDs of Included Primary Studies']
+                            ?.split(';').map(s => s.trim()).filter(s => s) || []).size);
+                    
+                    if (maxPossible > 0) {
+                        const ratio = overlapCount / maxPossible;
+                        if (ratio === 1) {
+                            cell.classList.add('bg-green-100', 'text-green-800');
+                        } else if (ratio >= 0.7) {
+                            cell.classList.add('bg-blue-100', 'text-blue-800');
+                        } else if (ratio >= 0.3) {
+                            cell.classList.add('bg-yellow-100', 'text-yellow-800');
+                        } else if (ratio > 0) {
+                            cell.classList.add('bg-orange-100', 'text-orange-800');
+                        }
+                    }
+                    
+                    tr.appendChild(cell);
+                });
+                body.appendChild(tr);
+            });
+        }
+
+        function createCoreStudiesTable(coreStudies) {
+            const body = document.getElementById('core-studies-body');
+            body.innerHTML = '';
+
+            coreStudies.forEach(study => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-left px-4 py-3 text-sm border-b font-mono">${study.studyId}</td>
+                    <td class="text-center px-4 py-3 border-b font-semibold">${study.count}</td>
+                    <td class="text-center px-4 py-3 border-b">${study.frequency}%</td>
+                    <td class="text-left px-4 py-3 text-xs border-b">${study.reviews.join(', ')}</td>
+                `;
+                body.appendChild(tr);
+            });
+        }
+
+        function createTableHeader(content, className = '') {
+            const th = document.createElement('th');
+            th.className = `px-3 py-2 bg-gray-100 font-semibold text-gray-700 border-b ${className}`;
+            th.innerHTML = content;
+            return th;
+        }
+
+        function createTableCell(content, className = '') {
+            const td = document.createElement('td');
+            td.className = `px-3 py-2 border-b ${className}`;
+            td.textContent = content;
+            return td;
+        }
+
+        function showError(message) {
+            errorMessageDiv.textContent = message;
+            errorMessageDiv.classList.remove('hidden');
+        }
+
+        // Enhanced export functionality
+        document.getElementById('export-excel-btn').addEventListener('click', exportToExcel);
+        document.getElementById('export-word-btn').addEventListener('click', exportToWord);
+        document.getElementById('export-json-btn').addEventListener('click', exportToJSON);
+
+        async function exportToExcel() {
+            if (!analysisData) return;
+            
+            try {
+                const workbook = new ExcelJS.Workbook();
+                const worksheet = workbook.addWorksheet('Overlap Analysis');
+                
+                // Add headers
+                worksheet.addRow(['Systematic Review Overlap Analysis Report']);
+                worksheet.addRow(['Generated by: AQAIMPA Universidad de La Laguna']);
+                worksheet.addRow([]);
+                
+                // Add statistics
+                worksheet.addRow(['Statistics']);
+                worksheet.addRow(['Corrected Covered Area (CCA)', analysisData.statistics.cca]);
+                worksheet.addRow(['Unique Primary Studies', analysisData.statistics.uniqueStudies]);
+                worksheet.addRow(['Total Study Inclusions', analysisData.statistics.totalStudyInclusions]);
+                worksheet.addRow(['Number of Systematic Reviews', analysisData.statistics.totalReviews]);
+                worksheet.addRow(['Core Studies Count', analysisData.statistics.coreStudiesCount]);
+                worksheet.addRow(['Mean Overlap %', analysisData.statistics.meanOverlap]);
+                worksheet.addRow([]);
+                
+                // Add core studies
+                worksheet.addRow(['Core Primary Studies']);
+                worksheet.addRow(['Study ID', 'Inclusion Count', 'Inclusion Frequency%', 'Included In Reviews']);
+                analysisData.coreStudies.forEach(study => {
+                    worksheet.addRow([study.studyId, study.count, study.frequency, study.reviews.join('; ')]);
+                });
+                
+                // Create a blob and download
+                const buffer = await workbook.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                saveAs(blob, 'Systematic_Review_Overlap_Analysis.xlsx');
+                
+            } catch (error) {
+                showError('Error exporting to Excel: ' + error.message);
+            }
+        }
+
+        function exportToWord() {
+            if (!analysisData) return;
+            alert('Word export functionality would be implemented with a proper library like docx.js');
+        }
+
+        function exportToJSON() {
+            if (!analysisData) return;
+            
+            const dataStr = JSON.stringify(analysisData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            saveAs(blob, 'overlap_analysis_data.json');
+        }
+
+        // Initialize tool
+        console.log('Enhanced Systematic Review Overlap Analysis Tool initialized');
+    </script>
+</body>
+</html>
